@@ -11,10 +11,24 @@ import { useEffect } from 'react';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import '../styles/global.css';
+import { AuthProvider } from '../contexts/AuthContext';
+import { useAuth } from '../hooks/useAuth';
 
 SplashScreen.preventAutoHideAsync();
 
-export default function RootLayout() {
+export default function RootLayoutWithProviders() {
+  return (
+      <SafeAreaProvider>
+          <AuthProvider>
+            <RootLayout />
+          </AuthProvider>
+        </SafeAreaProvider>
+  )
+}
+function RootLayout() {
+
+  const {isLoggedIn} = useAuth()
+
   const [loaded, error] = useFonts({
     HostGrotesk_400Regular,
     HostGrotesk_500Medium,
@@ -33,8 +47,18 @@ export default function RootLayout() {
   }
 
   return (
-    <SafeAreaProvider>
-      <Stack screenOptions={{ headerShown: false }} />
-    </SafeAreaProvider>
+   
+      <AuthProvider>
+        <Stack screenOptions={{ headerShown: false }} >
+          <Stack.Protected guard = {isLoggedIn}>
+            <Stack.Screen name="(private)"/>
+          </Stack.Protected>
+
+          <Stack.Protected guard = {!isLoggedIn}>
+            <Stack.Screen name="(public)"/>
+          </Stack.Protected>
+        </Stack>
+        </AuthProvider>
+
   );
 }
