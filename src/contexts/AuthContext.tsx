@@ -1,18 +1,122 @@
-import { createContext, ReactNode, useState } from "react";
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useMutation, useQuery } from '@tanstack/react-query';
+import { createContext, useCallback, useEffect, useState } from 'react';
 
+import { httpClient } from '../services/httpClient';
 
-interface AuthContextType {
-    isLoggedIn: boolean
-    isLoading: boolean
+type User = {
+  email: string;
+  name: string;
+  id: string;
+  calories: number;
+  proteins: number;
+  carbohydrates: number;
+  fats: number;
 }
-export const AuthContext = createContext({} as AuthContextType)
 
-export function AuthProvider({children}: {children: ReactNode}){
-    const [isLoggedIn, setIsLoggedIn] = useState(false)
-    const [isLoading, setIsLoading] = useState(false)
-    return (
-        <AuthContext.Provider value={{isLoggedIn, isLoading}}>
-            {children}
-        </AuthContext.Provider>
-    )
+type SignInParams = {
+  email: string;
+  password: string;
+}
+
+type SignUpParams = {
+  goal: string;
+  gender: string;
+  birthDate: string;
+  activityLevel: number;
+  height: number;
+  weight: number
+  account: {
+    name: string;
+    email: string;
+    password: string;
+  };
+}
+
+interface IAuthContextValue {
+  user: User | null;
+  isLoggedIn: boolean;
+  isLoading: boolean;
+  signIn(params: SignInParams): Promise<void>;
+  signUp(params: SignUpParams): Promise<void>;
+  signOut(): Promise<void>;
+}
+
+export const AuthContext = createContext({} as IAuthContextValue);
+
+const TOKEN_STORAGE_KEY = '@foodiary::token';
+
+export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const [token, setToken] = useState<string | null>(null);
+  const [isLoadingToken, setIsLoadingToken] = useState(true);
+
+  useEffect(() => {
+    async function load() {
+      const data = await AsyncStorage.getItem(TOKEN_STORAGE_KEY);
+
+      setToken(data);
+      setIsLoadingToken(false);
+    }
+    
+    load();
+  }, []);
+
+  useEffect(() => {
+    async function run() {
+      if (!token) {
+        httpClient.defaults.headers.common['Authorization'] = null;
+        return;
+      }
+
+      httpClient.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+      await AsyncStorage.setItem(TOKEN_STORAGE_KEY, token);
+    }
+
+    run();
+  }, [token]);
+
+  const { mutateAsync: signIn } = useMutation({
+    mutationFn: async (params: SignInParams) => {
+      const { data } = await httpClient.post('/signin', params);
+      setToken(data.accessToken);
+    },
+  });
+
+  const { mutateAsync: signUp } = useMutation({
+    mutationFn: async (params: SignUpParams) => {
+      const { data } = await httpClient.post('/signup', params);
+      setToken(data.accessToken);
+    },
+  });
+
+  const { data: user } = useQuery({
+    enabled: !!token,
+    queryKey: ['user'],
+    queryFn: async () => {
+      const { data } = await httpClient.get<{ user: User }>('/me');
+      const { user } = data;
+
+      return user;
+    },
+  });
+
+  const signOut = useCallback(async () => {
+    setToken(null);
+    await AsyncStorage.removeItem(TOKEN_STORAGE_KEY);
+  }, []);
+
+  return (
+    <AuthContext.Provider
+      value={{
+        isLoggedIn: !!token,
+        isLoading: isLoadingToken,
+        user: user ?? null,
+        signIn,
+        signUp,
+        signOut,
+      }}
+    >
+      {children}
+    </AuthContext.Provider>
+  );
 }
