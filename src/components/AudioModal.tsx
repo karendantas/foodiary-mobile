@@ -1,12 +1,14 @@
+import { useMutation } from '@tanstack/react-query';
+import { AudioModule, RecordingPresets, setAudioModeAsync, useAudioPlayer, useAudioRecorder, useAudioRecorderState } from 'expo-audio';
 import { StatusBar } from 'expo-status-bar';
 import { CheckIcon, MicIcon, PauseIcon, PlayIcon, SquareIcon, Trash2Icon, XIcon } from 'lucide-react-native';
 import { useEffect, useState } from 'react';
 import { Alert, Modal, Text, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
+import { httpClient } from '../services/httpClient';
 import { colors } from '../styles/colors';
 import { cn } from '../utils/cs';
 import { Button } from './Button';
-import { AudioModule, RecordingPresets, setAudioModeAsync, useAudioPlayer, useAudioRecorder, useAudioRecorderState } from 'expo-audio';
 
 interface IAudioModalProps {
   open: boolean;
@@ -16,45 +18,37 @@ interface IAudioModalProps {
 export function AudioModal({ onClose, open }: IAudioModalProps) {
   const [audioUri, setAudioUri] = useState<null | string>(null);
 
-  const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY)
-  const {isRecording} = useAudioRecorderState(audioRecorder)
+  const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
+  const { isRecording } = useAudioRecorderState(audioRecorder);
+  const player = useAudioPlayer(audioUri);
 
-  const player = useAudioPlayer(audioUri)
+  const { mutateAsync: createMeal } = useMutation({
+    mutationFn: async (uri: string) => {
+      const { data } = await httpClient.post('/meals', {
+        fileType: 'audio/m4a',
+      });
 
-  async function handleStartRecording() {
-    await audioRecorder.prepareToRecordAsync()
-    audioRecorder.record()
-  }
+      const { uploadURL } = data;
 
-  async function handleStopRecording() {
-    await audioRecorder.stop()
-    setAudioUri(audioRecorder.uri)
-  }
+      const response = await fetch(uri);
+      const file = await response.blob();
 
-  function handlePlay() {
-    player.play()
+      await fetch(uploadURL, {
+        method: 'PUT',
+        body: file,
+        headers: {
+          'Content-Type': file.type,
+        },
+      });
+    },
+  });
 
-  }
-
-  function handlePause() {
-    player.pause()
-  }
-
-  function handleDeleteAudio() {
-    setAudioUri(null);
-  }
-
-  function handleCloseModal() {
-    setAudioUri(null);
-
-    onClose();
-  }
-
-   useEffect(() => {
+  useEffect(() => {
     (async () => {
       const status = await AudioModule.requestRecordingPermissionsAsync();
+
       if (!status.granted) {
-        Alert.alert('Permission to access microphone was denied');
+        Alert.alert('A permissão para acessar o microfone foi negada.');
       }
 
       setAudioModeAsync({
@@ -63,6 +57,26 @@ export function AudioModal({ onClose, open }: IAudioModalProps) {
       });
     })();
   }, []);
+
+  async function handleStartRecording() {
+    await audioRecorder.prepareToRecordAsync();
+    audioRecorder.record();
+  }
+
+  async function handleStopRecording() {
+    await audioRecorder.stop();
+    setAudioUri(audioRecorder.uri);
+  }
+
+  function handleDeleteAudio() {
+    setAudioUri(null);
+  }
+
+  function handleCloseModal() {
+    setAudioUri(null);
+    onClose();
+  }
+
   return (
     <Modal
       transparent
@@ -133,17 +147,17 @@ export function AudioModal({ onClose, open }: IAudioModalProps) {
                 </Button>
 
                 {!player.playing && (
-                  <Button size="icon" color="dark" onPress={handlePlay}>
+                  <Button size="icon" color="dark" onPress={() => player.play()}>
                     <PlayIcon size={20} color={colors.lime[600]} />
                   </Button>
                 )}
                 {player.playing && (
-                  <Button size="icon" color="dark" onPress={handlePause}>
+                  <Button size="icon" color="dark" onPress={() => player.pause()}>
                     <PauseIcon size={20} color={colors.lime[600]} />
                   </Button>
                 )}
 
-                <Button size="icon">
+                <Button size="icon" onPress={() => createMeal(audioUri)}>
                   <CheckIcon size={20} color={colors.black[700]} />
                 </Button>
               </View>
